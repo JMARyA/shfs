@@ -1,0 +1,12 @@
+[package]
+name = "shfs_caching"
+version = "0.1.0"
+authors = ["JMARyA <jmarya0@icloud.com>"]
+edition = "2018"
+
+[dependencies]
+shfs_api = { path = "../api" }
+serde = { version = "1.0", features = ["derive"] }
+serde_derive = "1.0"
+serde_json = "1.0"
+rich = { git = "https://github.com/JMARyA/rich" }

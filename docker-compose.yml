@@ -1,0 +1,11 @@
+version: "3"
+
+services:
+  shfs:
+    build: .
+    volumes:
+    - ./config:/config
+    - ./volume1:/volumes/1
+    - ./volume2:/volumes/2
+    ports:
+    - 30:30

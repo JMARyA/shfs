@@ -1,0 +1,22 @@
+[package]
+name = "shfs"
+version = "0.1.0"
+authors = ["JMARyA <jmarya0@icloud.com>"]
+edition = "2018"
+
+[features]
+default = ["fuse_client"]
+
+fuse_client = ["shfs_fuse_fs", "fuse"]
+
+[dependencies]
+shfs_server = { path = "server" }
+shfs_client = { path = "client" }
+shfs_fuse_fs = { path = "fuse_fs", optional = true }
+fuse = { version = "0.3", optional = true }
+shfs_api = { path = "api" }
+time = "0.1"
+tokio = { version = "1", features = ["full"] }
+clap = "2.0"
+dns-lookup = "1.0.5"
+rich = { git = "https://github.com/JMARyA/rich" }

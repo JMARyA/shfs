@@ -1,0 +1,11 @@
+[package]
+name = "shfs_fuse_fs"
+version = "0.1.0"
+authors = ["JMARyA <jmarya0@icloud.com>"]
+edition = "2018"
+
+[dependencies]
+shfs_client = { path = "../client" }
+shfs_api = { path = "../api" }
+fuse = "0.3"
+time = "0.1"
