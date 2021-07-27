@@ -6,10 +6,13 @@ use shfs_api::volume::Volume;
 use std::io::{Read};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::net::UdpSocket;
+
+
 
 /// File Server Object
 pub struct FileServer {
-    listener: TcpListener,
+    listener: UdpSocket,
     config: ServerConfig,
     volumes: Vec<Volume>,
 }
@@ -21,7 +24,7 @@ impl FileServer {
     /// * `port` - The port to use
     pub async fn new(config: &String, port: u32) -> Result<FileServer, std::io::Error> {
         println!("Starting Server on port {}", port);
-        let listener = TcpListener::bind(&format!("0.0.0.0:{}", port)).await?;
+        let listener = UdpSocket::bind(&format!("0.0.0.0:{}", port)).await?;
         let mut conf_file = unwrap_or_err(std::fs::File::open(config), "Config file could not be opened");
         println!("Reading config file {}", config);
         let mut buf = vec![];
@@ -38,18 +41,7 @@ impl FileServer {
         });
     }
 
-    async fn handle_cmd(&mut self, mut stream: TcpStream) {
-        let mut buf = [0; 1024];
-        let n = match stream.read(&mut buf).await {
-            Ok(n) if n == 0 => {
-                return;
-            }
-            Ok(n) => n,
-            Err(e) => {
-                eprintln!("failed to read from socket; err = {:?}", e);
-                return;
-            }
-        };
+    async fn handle_cmd(&mut self, mut buf: Vec<u8>, n: usize) -> Vec<u8> {
         let data = &buf[0..n];
         // TODO : Implement better reading
         let obj: Call = serde_json::from_slice(&data).expect("What happened?");
@@ -297,7 +289,7 @@ impl FileServer {
             resp = serde_json::to_vec(&obj).unwrap();
         }
 
-        unwrap_or_err(stream.write_all(&resp).await, "Error sending response");
+        return resp;
     }
 
     /// Checks if the volume is read only.
@@ -314,9 +306,29 @@ impl FileServer {
     /// Infinite loop to run the server
     pub async fn run(&mut self) -> Result<(), std::io::Error> {
         loop {
-            let (socket, _) = self.listener.accept().await?;
+            let mut buf = vec![0; 524288];
 
-            self.handle_cmd(socket).await;
+            let (len, addr) = self.listener.recv_from(&mut buf).await?;
+            println!("{:?} bytes received from {:?}", len, addr);
+
+            let resp = self.handle_cmd(buf, len).await;
+
+            let pack_size = 8024;
+
+            if (resp.len()/pack_size) > 1 {
+                self.listener.send_to(&format!("PACK{}", (resp.len()/pack_size)).into_bytes(), addr).await?;
+            for i in 0..(resp.len()/pack_size) {
+                println!("{} parts; part {} - {}/{}", resp.len()/pack_size, i, i*pack_size, resp.len());
+                let mut end = (i*pack_size)+pack_size;
+                if (i+1 == (resp.len()/pack_size)) {
+                    end = resp.len();
+                }
+                let len = self.listener.send_to(&resp[(i*pack_size)..end], addr).await?;
+                println!("{:?} bytes sent", len);
+            }} else {
+                let len = self.listener.send_to(&resp[..resp.len()], addr).await?;
+                println!("{:?} bytes sent", len);
+            }
         }
     }
 }

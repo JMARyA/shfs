@@ -4,7 +4,7 @@ use shfs_api::responses::Response;
 use shfs_api::{filesystem_entry};
 use shfs_caching;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream, UdpSocket};
 use tokio::runtime::Runtime;
 use std::str::from_utf8;
 
@@ -23,27 +23,23 @@ fn remove_last_zeros(d: Vec<u8>) -> Vec<u8> {
     return d[0..content].to_vec();
 }
 
-/// Wrapper of [TcpStream]
-pub struct TCPConnection {
+/// Wrapper of [UdpSocket]
+pub struct UDPConnection {
     addr: String,
-    socket: TcpStream,
+    socket: UdpSocket,
     rt: Runtime,
 }
 
-impl TCPConnection {
-    pub fn new(addr: &String) -> TCPConnection {
+impl UDPConnection {
+    pub fn new(addr: &String) -> UDPConnection {
         let rt = Runtime::new().unwrap();
-        let socket = unwrap_or_err(rt.block_on(TcpStream::connect(&addr)), "");
-        return TCPConnection {
+        let socket = unwrap_or_err(rt.block_on(UdpSocket::bind("0.0.0.0:0")), "");
+        rt.block_on(socket.connect(addr));
+        return UDPConnection {
             addr: addr.to_string(),
             socket,
             rt,
         };
-    }
-
-    fn reconnect(&mut self) {
-        let socket = self.rt.block_on(TcpStream::connect(&self.addr)).unwrap();
-        self.socket = socket;
     }
 
     async fn send(socket: &mut TcpStream, msg: &Vec<u8>) -> Result<Vec<u8>, std::io::Error> {
@@ -69,22 +65,29 @@ impl TCPConnection {
         return Ok(final_buf);
     }
 
-    fn send_with_reconnect(&mut self, msg: &Vec<u8>) -> Result<Vec<u8>, std::io::Error> {
-        self.reconnect();
-        let resp = self.rt.block_on(TCPConnection::send(&mut self.socket, msg));
-        if resp.is_ok() {
-            let resp = resp.unwrap();
-            return Ok(resp);
-        } else {
-            println!("unable to fullfil request");
-            return Err(resp.unwrap_err());
+    fn send_with_reconnect(&mut self, msg: &Vec<u8>) -> Vec<u8> {
+        self.rt.block_on(self.socket.send(msg));
+        let mut resp = vec![0; 524288];
+        self.rt.block_on(self.socket.recv(&mut resp));
+        if (String::from_utf8(resp.clone()).unwrap().starts_with("PACK")) {
+            let mut sum = vec![];
+            let s = String::from_utf8(remove_last_zeros(resp.clone())).unwrap();
+            let parts = s[4..s.len()].to_string().parse().unwrap();
+            for i in 0..parts {
+                let mut resp = vec![0; 524288];
+                self.rt.block_on(self.socket.recv(&mut resp));
+                sum.append(&mut remove_last_zeros(resp));
+            }
+            println!("received {} bytes", sum.len());
+            return sum;
         }
+        return resp;
     }
 
     /// Sending a [Call] to the Server returning [Response]
     pub fn send_call(&mut self, req: Call) -> Response {
         let req = unwrap_or_err(serde_json::to_vec(&req), "Error serializing call");
-        let resp = self.send_with_reconnect(&req).unwrap();
+        let resp = self.send_with_reconnect(&req);
         let resp = remove_last_zeros(resp);
         let mut obj: Response =
             unwrap_or_err(serde_json::from_slice(&resp), "Error parsing response");
@@ -104,13 +107,13 @@ impl TCPConnection {
 
 /// General Connection to Server
 pub struct ServerConnection {
-    con: TCPConnection,
+    con: UDPConnection,
 }
 
 impl ServerConnection {
     pub fn new(addr: &String) -> ServerConnection {
         return ServerConnection {
-            con: TCPConnection::new(addr),
+            con: UDPConnection::new(addr),
         };
     }
 
@@ -161,7 +164,7 @@ impl ServerConnection {
 
 /// Connection to Volume
 pub struct VolumeConnection {
-    con: TCPConnection,
+    con: UDPConnection,
     info: RequestInfo,
     // Optional Volume Caching
     pub cache: Option<shfs_caching::Cache>
@@ -174,7 +177,7 @@ impl VolumeConnection {
     /// * `vol_id` - ID of Volume
     pub fn new(addr: &String, vol_id: u64) -> VolumeConnection {
         return VolumeConnection {
-            con: TCPConnection::new(addr),
+            con: UDPConnection::new(addr),
             info: RequestInfo { volume_id: vol_id },
             cache: Some(shfs_caching::Cache::new())
         };
