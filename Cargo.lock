@@ -371,7 +371,7 @@ dependencies = [
 
 [[package]]
 name = "shfs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "dns-lookup",
@@ -418,6 +418,7 @@ dependencies = [
  "serde_json",
  "shfs_api",
  "shfs_caching",
+ "shfs_networking",
  "tokio",
  "zstd",
 ]
@@ -433,6 +434,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "shfs_networking"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "tokio",
+ "zstd",
+]
+
+[[package]]
 name = "shfs_server"
 version = "0.1.0"
 dependencies = [
@@ -441,6 +453,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "shfs_api",
+ "shfs_networking",
  "tokio",
  "zstd",
 ]

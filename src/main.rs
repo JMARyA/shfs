@@ -94,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 options = options_values.unwrap().collect();
             }
             #[cfg(feature = "fuse_client")]
-                mount_fs(host, mountpoint, options);
+            mount_fs(host, mountpoint, options);
             #[cfg(not(feature = "fuse_client"))]
             mountUnavailable();
         }
@@ -156,7 +156,7 @@ async fn host_server(config: &String, port: u32) {
 }
 
 #[cfg(not(feature = "fuse_client"))]
-fn mountUnavailable() {
+fn mount_unavailable() {
     println!("The mounting feature was disabled during compilation");
 }
 

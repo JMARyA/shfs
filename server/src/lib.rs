@@ -1,20 +1,18 @@
 use rich::{unpack_or_default, unwrap_or_err};
-use shfs_api::calls::{Call};
+use shfs_api::calls::Call;
 use shfs_api::config::ServerConfig;
 use shfs_api::responses::Response;
 use shfs_api::volume::Volume;
-use std::io::{Read};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use shfs_networking::Connection;
+use std::io::Read;
 use tokio::net::UdpSocket;
-
-
 
 /// File Server Object
 pub struct FileServer {
     listener: UdpSocket,
     config: ServerConfig,
     volumes: Vec<Volume>,
+    con: Connection,
 }
 
 impl FileServer {
@@ -25,7 +23,10 @@ impl FileServer {
     pub async fn new(config: &String, port: u32) -> Result<FileServer, std::io::Error> {
         println!("Starting Server on port {}", port);
         let listener = UdpSocket::bind(&format!("0.0.0.0:{}", port)).await?;
-        let mut conf_file = unwrap_or_err(std::fs::File::open(config), "Config file could not be opened");
+        let mut conf_file = unwrap_or_err(
+            std::fs::File::open(config),
+            "Config file could not be opened",
+        );
         println!("Reading config file {}", config);
         let mut buf = vec![];
         unwrap_or_err(conf_file.read_to_end(&mut buf), "Error receiving call");
@@ -38,12 +39,11 @@ impl FileServer {
             listener,
             config,
             volumes,
+            con: Connection::new(),
         });
     }
 
-    async fn handle_cmd(&mut self, mut buf: Vec<u8>, n: usize) -> Vec<u8> {
-        let data = &buf[0..n];
-        // TODO : Implement better reading
+    async fn handle_cmd(&mut self, data: Vec<u8>) -> Vec<u8> {
         let obj: Call = serde_json::from_slice(&data).expect("What happened?");
         //println!("{:?}", obj);
 
@@ -268,8 +268,7 @@ impl FileServer {
                     name: name.to_string(),
                     version: option_env!("CARGO_PKG_VERSION").unwrap().to_string(),
                 }
-            }
-            //_ => Response::invalid,
+            } //_ => Response::invalid,
         };
 
         let mut resp = serde_json::to_vec(&resp).unwrap();
@@ -307,28 +306,13 @@ impl FileServer {
     pub async fn run(&mut self) -> Result<(), std::io::Error> {
         loop {
             let mut buf = vec![0; 524288];
-
             let (len, addr) = self.listener.recv_from(&mut buf).await?;
-            println!("{:?} bytes received from {:?}", len, addr);
 
-            let resp = self.handle_cmd(buf, len).await;
+            let resp = self.handle_cmd(buf[..len].to_vec()).await;
 
-            let pack_size = 8024;
-
-            if (resp.len()/pack_size) > 1 {
-                self.listener.send_to(&format!("PACK{}", (resp.len()/pack_size)).into_bytes(), addr).await?;
-            for i in 0..(resp.len()/pack_size) {
-                println!("{} parts; part {} - {}/{}", resp.len()/pack_size, i, i*pack_size, resp.len());
-                let mut end = (i*pack_size)+pack_size;
-                if (i+1 == (resp.len()/pack_size)) {
-                    end = resp.len();
-                }
-                let len = self.listener.send_to(&resp[(i*pack_size)..end], addr).await?;
-                println!("{:?} bytes sent", len);
-            }} else {
-                let len = self.listener.send_to(&resp[..resp.len()], addr).await?;
-                println!("{:?} bytes sent", len);
-            }
+            self.con
+                .send(resp, &(self.listener), addr.to_string())
+                .await;
         }
     }
 }

@@ -1,33 +1,20 @@
 use rich::*;
-use shfs_api::calls::{RequestInfo, Call};
+use shfs_api::calls::{Call, RequestInfo};
+use shfs_api::filesystem_entry;
 use shfs_api::responses::Response;
-use shfs_api::{filesystem_entry};
 use shfs_caching;
+use shfs_networking::Connection;
+use std::str::from_utf8;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::runtime::Runtime;
-use std::str::from_utf8;
-
-/// Removing unnecessary zeros at the end of [Vec]
-fn remove_last_zeros(d: Vec<u8>) -> Vec<u8> {
-    let mut reversed = d.clone();
-    reversed.reverse();
-    let mut c = 0;
-    for e in reversed.iter() {
-        if *e as isize != 0 {
-            break;
-        }
-        c += 1;
-    }
-    let content = d.len() - c;
-    return d[0..content].to_vec();
-}
 
 /// Wrapper of [UdpSocket]
 pub struct UDPConnection {
     addr: String,
     socket: UdpSocket,
     rt: Runtime,
+    con: Connection,
 }
 
 impl UDPConnection {
@@ -39,48 +26,13 @@ impl UDPConnection {
             addr: addr.to_string(),
             socket,
             rt,
+            con: Connection::new(),
         };
-    }
-
-    async fn send(socket: &mut TcpStream, msg: &Vec<u8>) -> Result<Vec<u8>, std::io::Error> {
-        unwrap_or_err(socket.write_all(msg).await, "Error sending request");
-
-        let mut final_buf: Vec<u8> = Vec::with_capacity(1024);
-
-        loop {
-            let mut buf = [0; 1024];
-            let n = socket.read(&mut buf).await;
-
-            if n.is_err() {
-                return Err(n.unwrap_err());
-            }
-            let n = n.unwrap();
-            if n == 0 {
-                break;
-            }
-            final_buf.extend_from_slice(&buf[0..n]);
-        }
-        //let buf_str = from_utf8(&buf).unwrap();
-
-        return Ok(final_buf);
     }
 
     fn send_with_reconnect(&mut self, msg: &Vec<u8>) -> Vec<u8> {
         self.rt.block_on(self.socket.send(msg));
-        let mut resp = vec![0; 524288];
-        self.rt.block_on(self.socket.recv(&mut resp));
-        if (String::from_utf8(resp.clone()).unwrap().starts_with("PACK")) {
-            let mut sum = vec![];
-            let s = String::from_utf8(remove_last_zeros(resp.clone())).unwrap();
-            let parts = s[4..s.len()].to_string().parse().unwrap();
-            for i in 0..parts {
-                let mut resp = vec![0; 524288];
-                self.rt.block_on(self.socket.recv(&mut resp));
-                sum.append(&mut remove_last_zeros(resp));
-            }
-            println!("received {} bytes", sum.len());
-            return sum;
-        }
+        let resp = self.rt.block_on(self.con.recv(&self.socket));
         return resp;
     }
 
@@ -88,14 +40,17 @@ impl UDPConnection {
     pub fn send_call(&mut self, req: Call) -> Response {
         let req = unwrap_or_err(serde_json::to_vec(&req), "Error serializing call");
         let resp = self.send_with_reconnect(&req);
-        let resp = remove_last_zeros(resp);
+        let resp = Connection::remove_last_zeros(resp);
         let mut obj: Response =
             unwrap_or_err(serde_json::from_slice(&resp), "Error parsing response");
         // Decompression if Compression is applied
         obj = match obj {
             Response::Compressed { data } => {
-                let resp = unwrap_or_err(zstd::stream::decode_all(&data[0..data.len()]), "Error decompressing response");
-                let resp = remove_last_zeros(resp);
+                let resp = unwrap_or_err(
+                    zstd::stream::decode_all(&data[0..data.len()]),
+                    "Error decompressing response",
+                );
+                let resp = Connection::remove_last_zeros(resp);
                 unwrap_or_err(serde_json::from_slice(&resp), "Error parsing response")
             }
             _ => obj,
@@ -161,13 +116,12 @@ impl ServerConnection {
     }
 }
 
-
 /// Connection to Volume
 pub struct VolumeConnection {
     con: UDPConnection,
     info: RequestInfo,
     // Optional Volume Caching
-    pub cache: Option<shfs_caching::Cache>
+    pub cache: Option<shfs_caching::Cache>,
 }
 
 impl VolumeConnection {
@@ -179,7 +133,7 @@ impl VolumeConnection {
         return VolumeConnection {
             con: UDPConnection::new(addr),
             info: RequestInfo { volume_id: vol_id },
-            cache: Some(shfs_caching::Cache::new())
+            cache: Some(shfs_caching::Cache::new()),
         };
     }
 
@@ -282,7 +236,12 @@ impl VolumeConnection {
     }
 
     pub fn write(&mut self, ino: u64, offset: i64, data: &[u8]) -> Result<u32, std::io::Error> {
-        println!("client write {} {} {}", ino, offset, from_utf8(&data).unwrap().to_string());
+        println!(
+            "client write {} {} {}",
+            ino,
+            offset,
+            from_utf8(&data).unwrap().to_string()
+        );
         let req = Call::Write {
             info: self.info.clone(),
             ino,

@@ -11,9 +11,9 @@ use std::os::linux::fs::MetadataExt;
 use std::os::macos::fs::MetadataExt;
 use std::path::Path;
 
-pub mod filesystem_entry;
 pub mod calls;
 pub mod config;
+pub mod filesystem_entry;
 pub mod responses;
 pub mod volume;
 
@@ -192,9 +192,9 @@ impl FilesystemAPI {
         let _ = fh.seek(SeekFrom::Start(offset as u64));
         let _ = fh.read_exact(&mut chunk);
         /*
-        unwrap_or_err(fh.seek(SeekFrom::Start(offset as u64)), "Error while seeking file");
-        fh.read_exact(&mut chunk).expect("File could not be read");
-*/
+                unwrap_or_err(fh.seek(SeekFrom::Start(offset as u64)), "Error while seeking file");
+                fh.read_exact(&mut chunk).expect("File could not be read");
+        */
         return Ok(chunk);
     }
 
@@ -308,7 +308,10 @@ impl FilesystemAPI {
         }
         let rpath = rpath.unwrap();
         let mut file = std::fs::File::open(&rpath).unwrap();
-        unwrap_or_err(file.seek(SeekFrom::Start(offset as u64)), "Error while seeking file");
+        unwrap_or_err(
+            file.seek(SeekFrom::Start(offset as u64)),
+            "Error while seeking file",
+        );
         let written = std::fs::write(&rpath, data);
         // TODO : Fix Writes
         //let written = file.write(data);
