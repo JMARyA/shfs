@@ -10,7 +10,7 @@ use std::ffi::OsStr;
 use std::path::Path;
 use time::Timespec;
 
-use shfs_api::filesystem_entry::{FsFiletype, FilesystemEntry};
+use shfs_api::filesystem_entry::{FilesystemEntry, FsFiletype};
 
 /// Helper Function to convert [FsFiletype] of the API to FUSE [FileType]
 pub fn to_filetype(t: &FsFiletype) -> FileType {
@@ -505,7 +505,7 @@ impl fuse::Filesystem for Filesystem {
     }
 
     fn bmap(&mut self, _req: &Request, _ino: u64, _blocksize: u32, _idx: u64, reply: ReplyBmap) {
-       reply.error(0);
+        reply.error(0);
     }
 
     #[cfg(target_os = "macos")]
@@ -519,11 +519,11 @@ impl fuse::Filesystem for Filesystem {
         _options: u64,
         reply: ReplyEmpty,
     ) {
-        unimplemented!()
+        reply.ok();
     }
 
     #[cfg(target_os = "macos")]
     fn getxtimes(&mut self, _req: &Request, _ino: u64, reply: ReplyXTimes) {
-        unimplemented!()
+        reply.error(0);
     }
 }

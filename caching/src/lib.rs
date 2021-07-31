@@ -1,5 +1,5 @@
 pub mod file;
-use shfs_api::{filesystem_entry};
+use shfs_api::filesystem_entry;
 use std::collections::HashMap;
 
 /// Cache for VolumeClient
@@ -9,8 +9,8 @@ pub struct Cache {
 
 impl Cache {
     pub fn new() -> Cache {
-        return Cache{
-            entry_cache: HashMap::new()
+        return Cache {
+            entry_cache: HashMap::new(),
         };
     }
 

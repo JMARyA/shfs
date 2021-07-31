@@ -29,7 +29,7 @@ impl FileServer {
         );
         println!("Reading config file {}", config);
         let mut buf = vec![];
-        unwrap_or_err(conf_file.read_to_end(&mut buf), "Error receiving call");
+        unwrap_or_err(conf_file.read_to_end(&mut buf), "Error reading config");
         let config: ServerConfig = serde_json::from_slice(&buf).expect("");
         let mut volumes = vec![];
         for vol in &config.volumes {
@@ -44,9 +44,9 @@ impl FileServer {
     }
 
     async fn handle_cmd(&mut self, data: Vec<u8>) -> Vec<u8> {
-        let obj: Call = serde_json::from_slice(&data).expect("What happened?");
-        //println!("{:?}", obj);
+        let obj: Call = serde_json::from_slice(&data).expect("Error deserializing call");
 
+        // Handle Call
         let resp = match obj {
             Call::ReadDir { info, path } => {
                 let data = self.volumes[info.volume_id as usize].api.readdir(&path);
@@ -271,18 +271,16 @@ impl FileServer {
             } //_ => Response::invalid,
         };
 
+        // Prepare Response
         let mut resp = serde_json::to_vec(&resp).unwrap();
 
+        // Compression
         let resp_comp = zstd::stream::encode_all(&resp[0..resp.len()], 5).unwrap();
 
         let size_resp = resp.len() * 8;
         let size_comp = resp_comp.len() * 8;
-        //let perc: f64 = (size_comp as f64) / (size_resp as f64) * 100.0;
-        /*println!(
-            "SENDING SIZE {} bytes COMPRESSED {} bytes [{}%]",
-            size_resp, size_comp, perc
-        );*/
 
+        // Compress if package is smaller
         if size_comp < size_resp {
             let obj = Response::Compressed { data: resp_comp };
             resp = serde_json::to_vec(&obj).unwrap();
@@ -305,8 +303,9 @@ impl FileServer {
     /// Infinite loop to run the server
     pub async fn run(&mut self) -> Result<(), std::io::Error> {
         loop {
-            let mut buf = vec![0; 524288];
+            let mut buf = vec![0; 16000];
             let (len, addr) = self.listener.recv_from(&mut buf).await?;
+            // TODO : Maybe Server Side Decompression?
 
             let resp = self.handle_cmd(buf[..len].to_vec()).await;
 

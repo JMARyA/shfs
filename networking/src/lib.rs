@@ -34,6 +34,7 @@ impl Connection {
                 )
                 .await
                 .unwrap();
+
             for i in 0..(resp.len() / pack_size) {
                 let mut end = (i * pack_size) + pack_size;
                 if i + 1 == (resp.len() / pack_size) {
@@ -53,15 +54,16 @@ impl Connection {
     }
 
     pub async fn recv(&self, socket: &UdpSocket) -> Vec<u8> {
-        let mut resp = vec![0; 524288];
-        socket.recv(&mut resp).await;
+        let mut resp = vec![0; 16000];
+        let _ = socket.recv(&mut resp).await;
         if String::from_utf8(resp.clone()).unwrap().starts_with("PACK") {
+            // Receive multiple packages if split up
             let mut sum = vec![];
             let s = String::from_utf8(Connection::remove_last_zeros(resp.clone())).unwrap();
             let parts = s[4..s.len()].to_string().parse().unwrap();
             for _ in 0..parts {
-                let mut resp = vec![0; 524288];
-                socket.recv(&mut resp).await;
+                let mut resp = vec![0; 16000];
+                let _ = socket.recv(&mut resp).await;
                 sum.append(&mut Connection::remove_last_zeros(resp));
             }
             return sum;
